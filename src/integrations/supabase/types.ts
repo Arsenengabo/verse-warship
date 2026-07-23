@@ -14,13 +14,210 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      events: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          group_id: string | null
+          id: string
+          scheduled_time: string
+          title: string
+          video_link: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          group_id?: string | null
+          id?: string
+          scheduled_time: string
+          title: string
+          video_link?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          group_id?: string | null
+          id?: string
+          scheduled_time?: string
+          title?: string
+          video_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      favorites: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          verse_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          verse_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          verse_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "favorites_verse_id_fkey"
+            columns: ["verse_id"]
+            isOneToOne: false
+            referencedRelation: "verses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_members: {
+        Row: {
+          group_id: string
+          joined_at: string
+          user_id: string
+        }
+        Insert: {
+          group_id: string
+          joined_at?: string
+          user_id: string
+        }
+        Update: {
+          group_id?: string
+          joined_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          owner_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          owner_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          owner_id?: string
+        }
+        Relationships: []
+      }
+      lessons: {
+        Row: {
+          author_id: string
+          created_at: string
+          id: string
+          notes: string | null
+          scripture_refs: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          scripture_refs?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          scripture_refs?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      verses: {
+        Row: {
+          created_at: string
+          id: string
+          reference: string
+          tags: string[]
+          text: string
+          translation: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reference: string
+          tags?: string[]
+          text: string
+          translation?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reference?: string
+          tags?: string[]
+          text?: string
+          translation?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_group_member: {
+        Args: { _group: string; _user: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
