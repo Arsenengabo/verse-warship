@@ -24,10 +24,10 @@ import { addFavorite, listFavoriteIds, removeFavorite } from "@/lib/favorites-ap
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Verse — a rotating Bible verse for your day" },
+      { title: "Verse" },
       { name: "description", content: "Open Verse to receive a quiet Bible verse on the rhythm you choose. Save favorites, adjust position and typography, install to your home screen." },
-      { property: "og:title", content: "Verse — a rotating Bible verse for your day" },
-      { property: "og:description", content: "Choose your rhythm. Receive scripture." },
+      { property: "og:title", content: "Verse" },
+      { property: "og:description", content: "Open Verse to receive a quiet Bible verse on the rhythm you choose. Save favorites, adjust position and typography, install to your home screen." },
     ],
   }),
   component: Index,
