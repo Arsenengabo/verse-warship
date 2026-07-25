@@ -182,6 +182,59 @@ export type Database = {
         }
         Relationships: []
       }
+      push_subscriptions: {
+        Row: {
+          auth_key: string
+          created_at: string
+          device_id: string | null
+          endpoint: string
+          id: string
+          interval_unit: string
+          interval_value: number
+          last_verse_id: string | null
+          next_send_at: string
+          p256dh: string
+          translation: string
+          user_id: string | null
+        }
+        Insert: {
+          auth_key: string
+          created_at?: string
+          device_id?: string | null
+          endpoint: string
+          id?: string
+          interval_unit?: string
+          interval_value?: number
+          last_verse_id?: string | null
+          next_send_at?: string
+          p256dh: string
+          translation?: string
+          user_id?: string | null
+        }
+        Update: {
+          auth_key?: string
+          created_at?: string
+          device_id?: string | null
+          endpoint?: string
+          id?: string
+          interval_unit?: string
+          interval_value?: number
+          last_verse_id?: string | null
+          next_send_at?: string
+          p256dh?: string
+          translation?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_last_verse_id_fkey"
+            columns: ["last_verse_id"]
+            isOneToOne: false
+            referencedRelation: "verses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       verses: {
         Row: {
           created_at: string
