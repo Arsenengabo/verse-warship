@@ -13,6 +13,7 @@ import {
   type VerseSettings,
 } from "@/lib/verse-settings";
 import { applyTheme } from "@/lib/theme";
+import { subscribeToVersePush, unsubscribeFromVersePush } from "@/lib/push-subscribe";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -46,29 +47,41 @@ function SettingsPage() {
       const next = { ...prev, [key]: value };
       saveSettings(next);
       if (key === "theme") applyTheme(value as Theme);
+      if (next.notificationsEnabled && (key === "intervalValue" || key === "intervalUnit" || key === "translation")) {
+        void subscribeToVersePush({
+          intervalValue: next.intervalValue,
+          intervalUnit: next.intervalUnit,
+          translation: next.translation,
+        });
+      }
       return next;
     });
   }
 
   async function toggleNotifications(enabled: boolean) {
     if (!enabled) {
+      await unsubscribeFromVersePush();
       update("notificationsEnabled", false);
+      toast.success("Verse notifications turned off.");
       return;
     }
-    if (typeof Notification === "undefined") {
-      toast.error("This device doesn't support notifications.");
-      return;
-    }
-    let perm = Notification.permission;
-    if (perm === "default") {
-      perm = await Notification.requestPermission();
-    }
-    if (perm === "granted") {
+    const result = await subscribeToVersePush({
+      intervalValue: s.intervalValue,
+      intervalUnit: s.intervalUnit,
+      translation: s.translation,
+    });
+    if (result.ok) {
       update("notificationsEnabled", true);
-      toast.success("Notifications enabled while the app is open.");
+      toast.success("You'll get a verse notification on the rhythm you chose — even when Verse is closed.");
     } else {
       update("notificationsEnabled", false);
-      toast.error("Permission denied. Enable it in your browser settings to receive verse alerts.");
+      const messages: Record<string, string> = {
+        unsupported: "This browser doesn't support push notifications.",
+        "permission-denied": "Permission denied. Enable notifications in your browser or device settings.",
+        "no-vapid-key": "Push isn't configured yet (missing VAPID key).",
+        error: result.message ?? "Something went wrong subscribing to notifications.",
+      };
+      toast.error(messages[result.reason] ?? "Couldn't enable notifications.");
     }
   }
 
