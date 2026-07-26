@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { IntervalUnit } from "@/lib/verse-settings";
+import {
+  guestUpsertPushSubscription,
+  guestDeletePushSubscription,
+} from "@/lib/guest-push.functions";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 const DEVICE_ID_KEY = "verse.device_id.v1";
@@ -54,21 +58,35 @@ export async function subscribeToVersePush(params: SubscribeParams): Promise<Sub
     const { data: userData } = await supabase.auth.getUser();
     const json = subscription.toJSON();
 
-    const { error } = await supabase.from("push_subscriptions").upsert(
-      {
-        user_id: userData?.user?.id ?? null,
-        device_id: userData?.user?.id ? null : getOrCreateDeviceId(),
-        endpoint: json.endpoint!,
-        p256dh: json.keys!.p256dh,
-        auth_key: json.keys!.auth,
-        interval_value: params.intervalValue,
-        interval_unit: params.intervalUnit,
-        translation: params.translation,
-        next_send_at: new Date().toISOString(),
-      },
-      { onConflict: "endpoint" },
-    );
-    if (error) throw error;
+    if (userData?.user?.id) {
+      const { error } = await supabase.from("push_subscriptions").upsert(
+        {
+          user_id: userData.user.id,
+          device_id: null,
+          endpoint: json.endpoint!,
+          p256dh: json.keys!.p256dh,
+          auth_key: json.keys!.auth,
+          interval_value: params.intervalValue,
+          interval_unit: params.intervalUnit,
+          translation: params.translation,
+          next_send_at: new Date().toISOString(),
+        },
+        { onConflict: "endpoint" },
+      );
+      if (error) throw error;
+    } else {
+      await guestUpsertPushSubscription({
+        data: {
+          endpoint: json.endpoint!,
+          p256dh: json.keys!.p256dh,
+          auth: json.keys!.auth,
+          deviceId: getOrCreateDeviceId(),
+          intervalValue: params.intervalValue,
+          intervalUnit: params.intervalUnit,
+          translation: params.translation,
+        },
+      });
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: "error", message: err instanceof Error ? err.message : String(err) };
@@ -82,5 +100,14 @@ export async function unsubscribeFromVersePush(): Promise<void> {
   if (!subscription) return;
   const endpoint = subscription.endpoint;
   await subscription.unsubscribe();
-  await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user?.id) {
+    await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  } else {
+    try {
+      await guestDeletePushSubscription({ data: { endpoint } });
+    } catch {
+      // best-effort; server prune will remove stale endpoints on 404/410
+    }
+  }
 }
