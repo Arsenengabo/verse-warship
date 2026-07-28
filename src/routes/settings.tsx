@@ -14,6 +14,12 @@ import {
 } from "@/lib/verse-settings";
 import { applyTheme } from "@/lib/theme";
 import { subscribeToVersePush, unsubscribeFromVersePush } from "@/lib/push-subscribe";
+import {
+  isNativeWallpaperAvailable,
+  enableWallpaperRotation,
+  disableWallpaperRotation,
+  applyWallpaperNow,
+} from "@/lib/wallpaper";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -37,6 +43,27 @@ const positions: { value: Position; label: string }[] = [
 
 function SettingsPage() {
   const [s, setS] = useState<VerseSettings>(DEFAULT_SETTINGS);
+  const [wallpaperEnabled, setWallpaperEnabled] = useState(
+    () => window.localStorage.getItem("verse.wallpaper.enabled.v1") === "true",
+  );
+
+  async function toggleWallpaper(enabled: boolean) {
+    if (!enabled) {
+      await disableWallpaperRotation();
+      setWallpaperEnabled(false);
+      window.localStorage.setItem("verse.wallpaper.enabled.v1", "false");
+      toast.success("Lock screen wallpaper rotation turned off.");
+      return;
+    }
+    const result = await enableWallpaperRotation(s.intervalValue, s.intervalUnit);
+    setWallpaperEnabled(result.ok);
+    window.localStorage.setItem("verse.wallpaper.enabled.v1", String(result.ok));
+    if (result.ok) {
+      toast.success(result.note ?? "Lock screen wallpaper will rotate automatically.");
+    } else {
+      toast.error(result.note ?? "Couldn't enable wallpaper rotation.");
+    }
+  }
 
   useEffect(() => {
     setS(loadSettings());
@@ -47,8 +74,9 @@ function SettingsPage() {
       const next = { ...prev, [key]: value };
       saveSettings(next);
       if (key === "theme") applyTheme(value as Theme);
+      // Keep the server-side push schedule in sync with rotation/translation changes.
       if (next.notificationsEnabled && (key === "intervalValue" || key === "intervalUnit" || key === "translation")) {
-        void subscribeToVersePush({
+        subscribeToVersePush({
           intervalValue: next.intervalValue,
           intervalUnit: next.intervalUnit,
           translation: next.translation,
@@ -62,22 +90,24 @@ function SettingsPage() {
     if (!enabled) {
       await unsubscribeFromVersePush();
       update("notificationsEnabled", false);
-      toast.success("Verse notifications turned off.");
+      toast.success("Verse push notifications turned off.");
       return;
     }
+
     const result = await subscribeToVersePush({
       intervalValue: s.intervalValue,
       intervalUnit: s.intervalUnit,
       translation: s.translation,
     });
+
     if (result.ok) {
       update("notificationsEnabled", true);
-      toast.success("You'll get a verse notification on the rhythm you chose — even when Verse is closed.");
+      toast.success("You'll get a verse on your lock screen even when the app is closed.");
     } else {
       update("notificationsEnabled", false);
       const messages: Record<string, string> = {
         unsupported: "This browser doesn't support push notifications.",
-        "permission-denied": "Permission denied. Enable notifications in your browser or device settings.",
+        "permission-denied": "Permission denied. Enable notifications in your browser/device settings.",
         "no-vapid-key": "Push isn't configured yet (missing VAPID key).",
         error: result.message ?? "Something went wrong subscribing to notifications.",
       };
@@ -189,7 +219,7 @@ function SettingsPage() {
         />
       </Section>
 
-      <Section title="Notifications" description="Verse alerts while Verse is open. Background delivery depends on your OS/browser — iOS Safari does not currently support it.">
+      <Section title="Notifications" description="Verse alerts on your lock screen, even when Verse is closed. On iOS, add Verse to your Home Screen first (Share → Add to Home Screen) — Safari only supports this for installed apps.">
         <label className="flex cursor-pointer items-center gap-3">
           <input
             type="checkbox"
@@ -200,6 +230,33 @@ function SettingsPage() {
           <span>Show verse alerts</span>
         </label>
       </Section>
+
+      {isNativeWallpaperAvailable() && (
+        <Section
+          title="Lock screen wallpaper"
+          description="Automatically sets your lock screen to a new verse on a schedule, even while Verse is fully closed. Android limits background updates to every 15 minutes minimum."
+        >
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={wallpaperEnabled}
+              onChange={(e) => toggleWallpaper(e.target.checked)}
+              className="h-5 w-5 rounded border-input accent-primary"
+            />
+            <span>Rotate lock screen wallpaper</span>
+          </label>
+          <button
+            type="button"
+            onClick={async () => {
+              const applied = await applyWallpaperNow();
+              toast[applied ? "success" : "error"](applied ? "Lock screen updated." : "Couldn't set wallpaper.");
+            }}
+            className="mt-3 rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent"
+          >
+            Set wallpaper now
+          </button>
+        </Section>
+      )}
     </div>
   );
 }
