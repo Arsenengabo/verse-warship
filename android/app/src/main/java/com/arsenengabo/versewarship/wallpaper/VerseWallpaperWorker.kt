@@ -3,7 +3,7 @@ package com.arsenengabo.versewarship.wallpaper
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import androidx.work.Result as WorkResult
+import androidx.work.ListenableWorker.Result as WorkResult
 
 /**
  * Runs on the schedule set from the app (see VerseWallpaperPlugin.schedule).
