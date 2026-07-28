@@ -1,6 +1,5 @@
 package com.arsenengabo.versewarship.wallpaper
 
-import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.Data
@@ -16,27 +15,36 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import java.util.concurrent.TimeUnit
 
 /**
- * Exposed to the web app as `Capacitor.Plugins.VerseWallpaper` (or via the
- * @capacitor/core registerPlugin call on the JS side — see wallpaper-plugin.ts).
+ * Exposed to the web app as `Capacitor.Plugins.VerseWallpaper` (see src/lib/wallpaper.ts).
  *
  * Minimum WorkManager periodic interval is 15 minutes (Android platform floor —
- * this cannot go lower even for a "1 minute" rotation setting; the UI should
- * clamp/label this honestly rather than promise sub-15-minute wallpaper changes).
+ * cannot go lower even for a "1 minute" rotation setting; the UI clamps/labels this).
+ *
+ * `target` accepts "home", "lock", or "both" (default "both") — sets the wallpaper
+ * independently for the home screen, lock screen, or both at once.
  */
 @CapacitorPlugin(name = "VerseWallpaper")
 class VerseWallpaperPlugin : Plugin() {
     private val WORK_NAME = "verse_wallpaper_periodic"
+
+    private fun parseTarget(raw: String?): VerseWallpaperRenderer.Target = when (raw?.lowercase()) {
+        "home" -> VerseWallpaperRenderer.Target.HOME
+        "lock" -> VerseWallpaperRenderer.Target.LOCK
+        else -> VerseWallpaperRenderer.Target.BOTH
+    }
 
     @PluginMethod
     fun schedule(call: PluginCall) {
         val minutes = call.getInt("intervalMinutes", 60) ?: 60
         val supabaseUrl = call.getString("supabaseUrl") ?: ""
         val supabaseAnonKey = call.getString("supabaseAnonKey") ?: ""
+        val target = parseTarget(call.getString("target"))
         val clampedMinutes = minutes.coerceAtLeast(15) // Android platform minimum
 
         val inputData = Data.Builder()
             .putString(VerseWallpaperWorker.KEY_SUPABASE_URL, supabaseUrl)
             .putString(VerseWallpaperWorker.KEY_SUPABASE_ANON_KEY, supabaseAnonKey)
+            .putString(VerseWallpaperWorker.KEY_TARGET, target.name)
             .build()
 
         val constraints = Constraints.Builder()
@@ -73,11 +81,12 @@ class VerseWallpaperPlugin : Plugin() {
     fun applyNow(call: PluginCall) {
         val supabaseUrl = call.getString("supabaseUrl") ?: ""
         val supabaseAnonKey = call.getString("supabaseAnonKey") ?: ""
+        val target = parseTarget(call.getString("target"))
         VerseWallpaperRenderer.supabaseUrl = supabaseUrl
         VerseWallpaperRenderer.supabaseAnonKey = supabaseAnonKey
 
         Thread {
-            val success = VerseWallpaperRenderer.refreshAndApply(context)
+            val success = VerseWallpaperRenderer.refreshAndApply(context, target)
             val result = JSObject()
             result.put("applied", success)
             call.resolve(result)

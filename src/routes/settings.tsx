@@ -19,6 +19,7 @@ import {
   enableWallpaperRotation,
   disableWallpaperRotation,
   applyWallpaperNow,
+  type WallpaperTarget,
 } from "@/lib/wallpaper";
 
 export const Route = createFileRoute("/settings")({
@@ -46,20 +47,33 @@ function SettingsPage() {
   const [wallpaperEnabled, setWallpaperEnabled] = useState(
     () => window.localStorage.getItem("verse.wallpaper.enabled.v1") === "true",
   );
+  const [wallpaperTarget, setWallpaperTarget] = useState<WallpaperTarget>(
+    () => (window.localStorage.getItem("verse.wallpaper.target.v1") as WallpaperTarget) || "both",
+  );
+
+  function updateWallpaperTarget(target: WallpaperTarget) {
+    setWallpaperTarget(target);
+    window.localStorage.setItem("verse.wallpaper.target.v1", target);
+    // If rotation is already on, re-schedule immediately so the new target takes effect
+    // without requiring the person to toggle it off and on again.
+    if (wallpaperEnabled) {
+      enableWallpaperRotation(s.intervalValue, s.intervalUnit, target);
+    }
+  }
 
   async function toggleWallpaper(enabled: boolean) {
     if (!enabled) {
       await disableWallpaperRotation();
       setWallpaperEnabled(false);
       window.localStorage.setItem("verse.wallpaper.enabled.v1", "false");
-      toast.success("Lock screen wallpaper rotation turned off.");
+      toast.success("Wallpaper rotation turned off.");
       return;
     }
-    const result = await enableWallpaperRotation(s.intervalValue, s.intervalUnit);
+    const result = await enableWallpaperRotation(s.intervalValue, s.intervalUnit, wallpaperTarget);
     setWallpaperEnabled(result.ok);
     window.localStorage.setItem("verse.wallpaper.enabled.v1", String(result.ok));
     if (result.ok) {
-      toast.success(result.note ?? "Lock screen wallpaper will rotate automatically.");
+      toast.success(result.note ?? "Wallpaper will rotate automatically.");
     } else {
       toast.error(result.note ?? "Couldn't enable wallpaper rotation.");
     }
@@ -233,8 +247,8 @@ function SettingsPage() {
 
       {isNativeWallpaperAvailable() && (
         <Section
-          title="Lock screen wallpaper"
-          description="Automatically sets your lock screen to a new verse on a schedule, even while Verse is fully closed. Android limits background updates to every 15 minutes minimum."
+          title="Wallpaper"
+          description="Automatically sets a new verse as your wallpaper on a schedule, even while Verse is fully closed. Android limits background updates to every 15 minutes minimum. Fits any screen size automatically."
         >
           <label className="flex cursor-pointer items-center gap-3">
             <input
@@ -243,15 +257,40 @@ function SettingsPage() {
               onChange={(e) => toggleWallpaper(e.target.checked)}
               className="h-5 w-5 rounded border-input accent-primary"
             />
-            <span>Rotate lock screen wallpaper</span>
+            <span>Rotate wallpaper automatically</span>
           </label>
+
+          <div className="mt-4">
+            <p className="mb-2 text-sm text-muted-foreground">Apply to</p>
+            <div className="flex gap-2">
+              {([
+                { value: "both", label: "Home + Lock" },
+                { value: "home", label: "Home only" },
+                { value: "lock", label: "Lock only" },
+              ] as { value: WallpaperTarget; label: string }[]).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => updateWallpaperTarget(opt.value)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm ${
+                    wallpaperTarget === opt.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input hover:bg-accent"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={async () => {
-              const applied = await applyWallpaperNow();
-              toast[applied ? "success" : "error"](applied ? "Lock screen updated." : "Couldn't set wallpaper.");
+              const applied = await applyWallpaperNow(wallpaperTarget);
+              toast[applied ? "success" : "error"](applied ? "Wallpaper updated." : "Couldn't set wallpaper.");
             }}
-            className="mt-3 rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent"
+            className="mt-4 rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent"
           >
             Set wallpaper now
           </button>

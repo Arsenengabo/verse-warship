@@ -1,16 +1,22 @@
 import { registerPlugin } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
-import { supabase } from "@/integrations/supabase/client";
 import type { IntervalUnit } from "@/lib/verse-settings";
+
+export type WallpaperTarget = "home" | "lock" | "both";
 
 interface VerseWallpaperPlugin {
   schedule(options: {
     intervalMinutes: number;
     supabaseUrl: string;
     supabaseAnonKey: string;
+    target: WallpaperTarget;
   }): Promise<{ scheduled: boolean; effectiveIntervalMinutes: number }>;
   cancel(): Promise<{ cancelled: boolean }>;
-  applyNow(options: { supabaseUrl: string; supabaseAnonKey: string }): Promise<{ applied: boolean }>;
+  applyNow(options: {
+    supabaseUrl: string;
+    supabaseAnonKey: string;
+    target: WallpaperTarget;
+  }): Promise<{ applied: boolean }>;
 }
 
 const VerseWallpaper = registerPlugin<VerseWallpaperPlugin>("VerseWallpaper");
@@ -23,7 +29,7 @@ function toMinutes(intervalValue: number, intervalUnit: IntervalUnit): number {
   return Math.max(1, intervalValue) * unitMinutes[intervalUnit];
 }
 
-/** True only inside the native Android/iOS shell — false in a regular browser tab. */
+/** True only inside the native Android shell — false in a regular browser tab (and on iOS, which has no wallpaper API). */
 export function isNativeWallpaperAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 }
@@ -35,7 +41,7 @@ export interface WallpaperScheduleResult {
 }
 
 /**
- * Schedules the recurring lock screen wallpaper update.
+ * Schedules the recurring wallpaper update for the chosen target(s).
  * Android enforces a 15-minute floor on background work (OS-level, not
  * something this app controls) — a "1 minute" setting will run every 15
  * minutes instead. Surface `effectiveIntervalMinutes` in the UI so the
@@ -44,15 +50,17 @@ export interface WallpaperScheduleResult {
 export async function enableWallpaperRotation(
   intervalValue: number,
   intervalUnit: IntervalUnit,
+  target: WallpaperTarget = "both",
 ): Promise<WallpaperScheduleResult> {
   if (!isNativeWallpaperAvailable()) {
-    return { ok: false, note: "Lock screen wallpaper only works in the installed Android app, not the browser." };
+    return { ok: false, note: "Wallpaper rotation only works in the installed Android app, not the browser." };
   }
   const requestedMinutes = toMinutes(intervalValue, intervalUnit);
   const result = await VerseWallpaper.schedule({
     intervalMinutes: requestedMinutes,
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
+    target,
   });
   return {
     ok: result.scheduled,
@@ -69,12 +77,13 @@ export async function disableWallpaperRotation(): Promise<void> {
   await VerseWallpaper.cancel();
 }
 
-/** Immediately renders and sets the lock screen wallpaper to a fresh verse (e.g. a "Set now" button). */
-export async function applyWallpaperNow(): Promise<boolean> {
+/** Immediately renders and sets the wallpaper for the chosen target(s) to a fresh verse. */
+export async function applyWallpaperNow(target: WallpaperTarget = "both"): Promise<boolean> {
   if (!isNativeWallpaperAvailable()) return false;
   const result = await VerseWallpaper.applyNow({
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
+    target,
   });
   return result.applied;
 }

@@ -3,7 +3,7 @@ package com.arsenengabo.versewarship.wallpaper
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import androidx.work.Result as WorkResult
+import androidx.work.ListenableWorker.Result as WorkResult
 
 /**
  * Runs on the schedule set from the app (see VerseWallpaperPlugin.schedule).
@@ -16,14 +16,20 @@ class VerseWallpaperWorker(context: Context, params: WorkerParameters) : Corouti
         VerseWallpaperRenderer.supabaseUrl = inputData.getString(KEY_SUPABASE_URL) ?: VerseWallpaperRenderer.supabaseUrl
         VerseWallpaperRenderer.supabaseAnonKey = inputData.getString(KEY_SUPABASE_ANON_KEY) ?: VerseWallpaperRenderer.supabaseAnonKey
 
-        val success = VerseWallpaperRenderer.refreshAndApply(applicationContext)
-        // Retry rather than fail outright — next scheduled run will also just try again either way,
-        // but retry gives a faster recovery if this was a transient network blip.
+        val targetName = inputData.getString(KEY_TARGET) ?: "BOTH"
+        val target = try {
+            VerseWallpaperRenderer.Target.valueOf(targetName)
+        } catch (e: IllegalArgumentException) {
+            VerseWallpaperRenderer.Target.BOTH
+        }
+
+        val success = VerseWallpaperRenderer.refreshAndApply(applicationContext, target)
         return if (success) WorkResult.success() else WorkResult.retry()
     }
 
     companion object {
         const val KEY_SUPABASE_URL = "supabase_url"
         const val KEY_SUPABASE_ANON_KEY = "supabase_anon_key"
+        const val KEY_TARGET = "target"
     }
 }

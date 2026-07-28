@@ -6,23 +6,21 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Point
 import android.graphics.Typeface
 import android.os.Build
-import android.util.DisplayMetrics
 import android.util.Log
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import android.view.WindowManager
 
 /**
  * Fetches the current/next verse straight from Supabase (same table the web app reads)
- * and renders it as a lock screen wallpaper bitmap, then applies it via WallpaperManager.
+ * and renders it as a wallpaper bitmap sized to the ACTUAL device screen (not a fixed
+ * resolution), then applies it to home screen, lock screen, or both via WallpaperManager.
  *
- * This runs independently of the web app / WebView — it works even if the app has
- * been fully closed, as long as the OS wakes the scheduled WorkManager job (see
- * VerseWallpaperWorker.kt). Requires network to fetch a *new* verse; falls back to
- * the last cached verse (SharedPreferences) if offline, so it still refreshes the
- * wallpaper on schedule even without connectivity.
+ * Works even if the app has been fully closed, as long as WorkManager wakes the
+ * scheduled job. Requires network to fetch a *new* verse; falls back to the last
+ * cached verse (SharedPreferences) if offline, so it still refreshes on schedule
+ * even without connectivity.
  */
 object VerseWallpaperRenderer {
     private const val TAG = "VerseWallpaper"
@@ -34,10 +32,12 @@ object VerseWallpaperRenderer {
     var supabaseUrl: String = ""
     var supabaseAnonKey: String = ""
 
-    fun refreshAndApply(context: Context): Boolean {
+    enum class Target { HOME, LOCK, BOTH }
+
+    fun refreshAndApply(context: Context, target: Target = Target.BOTH): Boolean {
         val (reference, text) = fetchRandomVerse(context) ?: getCachedVerse(context) ?: return false
         val bitmap = renderVerseBitmap(context, reference, text)
-        return applyToLockScreen(context, bitmap)
+        return applyWallpaper(context, bitmap, target)
     }
 
     private fun fetchRandomVerse(context: Context): Pair<String, String>? {
@@ -46,8 +46,8 @@ object VerseWallpaperRenderer {
             return null
         }
         return try {
-            val url = URL("$supabaseUrl/rest/v1/verses?select=reference,text&limit=50")
-            val conn = url.openConnection() as HttpURLConnection
+            val url = java.net.URL("$supabaseUrl/rest/v1/verses?select=reference,text&limit=50")
+            val conn = url.openConnection() as java.net.HttpURLConnection
             conn.setRequestProperty("apikey", supabaseAnonKey)
             conn.setRequestProperty("Authorization", "Bearer $supabaseAnonKey")
             conn.connectTimeout = 8000
@@ -61,7 +61,6 @@ object VerseWallpaperRenderer {
             val reference = pick.getString("reference")
             val text = pick.getString("text")
 
-            // cache for offline fallback next time
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_LAST_REF, reference)
                 .putString(KEY_LAST_TEXT, text)
@@ -81,43 +80,92 @@ object VerseWallpaperRenderer {
         return ref to text
     }
 
+    /** Real, full screen size — including areas under notches/cutouts, since wallpaper spans the whole display. */
+    private fun getScreenSize(context: Context): Point {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            Point(bounds.width(), bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            val display = wm.defaultDisplay
+            val point = Point()
+            @Suppress("DEPRECATION")
+            display.getRealSize(point)
+            point
+        }
+    }
+
     private fun renderVerseBitmap(context: Context, reference: String, text: String): Bitmap {
-        val dm: DisplayMetrics = context.resources.displayMetrics
-        val width = dm.widthPixels.coerceAtLeast(1080)
-        val height = dm.heightPixels.coerceAtLeast(1920)
+        val screen = getScreenSize(context)
+        // Guard against absurd values on rare/unusual devices (foldables mid-fold, etc.)
+        val width = screen.x.coerceIn(480, 2160)
+        val height = screen.y.coerceIn(800, 3840)
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-
-        // Background — solid deep indigo, matching the web app's dark theme.
         canvas.drawColor(Color.parseColor("#1B1330"))
+
+        // Reserve space top/bottom so text never collides with the lock screen clock
+        // widget (top ~22% of screen) or the home screen dock/gesture bar (bottom ~12%).
+        val topSafeMargin = height * 0.24f
+        val bottomSafeMargin = height * 0.14f
+        val horizontalMargin = width * 0.09f
+        val maxTextWidth = width - horizontalMargin * 2
+        val maxTextHeight = height - topSafeMargin - bottomSafeMargin
+
+        val fitted = fitTextToBounds(text, maxTextWidth, maxTextHeight)
 
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = width * 0.062f
+            textSize = fitted.fontSizePx
             typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
             textAlign = Paint.Align.CENTER
         }
         val refPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#C9B8FF")
-            textSize = width * 0.045f
+            textSize = (fitted.fontSizePx * 0.72f).coerceAtLeast(width * 0.03f)
             typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
             textAlign = Paint.Align.CENTER
         }
 
-        val maxTextWidth = width * 0.82f
-        val lines = wrapText(text, bodyPaint, maxTextWidth)
-        val lineHeight = bodyPaint.textSize * 1.35f
-        val totalTextHeight = lineHeight * lines.size
-        var y = height / 2f - totalTextHeight / 2f
+        val lineHeight = fitted.fontSizePx * 1.35f
+        val totalTextHeight = lineHeight * fitted.lines.size
+        // Center within the safe vertical band, not the full screen, so it clears the clock/dock.
+        var y = topSafeMargin + (maxTextHeight - totalTextHeight) / 2f + fitted.fontSizePx
 
-        for (line in lines) {
+        for (line in fitted.lines) {
             canvas.drawText(line, width / 2f, y, bodyPaint)
             y += lineHeight
         }
-        canvas.drawText("— $reference", width / 2f, y + lineHeight * 0.6f, refPaint)
+        canvas.drawText("— $reference", width / 2f, y + lineHeight * 0.5f, refPaint)
 
         return bitmap
+    }
+
+    private data class FittedText(val lines: List<String>, val fontSizePx: Float)
+
+    /**
+     * Starts from a font size proportional to screen width, then shrinks in a loop until
+     * the wrapped text fits within maxHeight — guarantees no overflow regardless of verse
+     * length or how small/large/differently-shaped the physical screen is.
+     */
+    private fun fitTextToBounds(text: String, maxWidth: Float, maxHeight: Float): FittedText {
+        var fontSize = maxWidth * 0.11f
+        val minFontSize = maxWidth * 0.045f
+        val measurePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
+        }
+
+        var lines: List<String>
+        while (true) {
+            measurePaint.textSize = fontSize
+            lines = wrapText(text, measurePaint, maxWidth)
+            val totalHeight = fontSize * 1.35f * lines.size
+            if (totalHeight <= maxHeight || fontSize <= minFontSize) break
+            fontSize *= 0.92f
+        }
+        return FittedText(lines, fontSize)
     }
 
     private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {
@@ -137,13 +185,18 @@ object VerseWallpaperRenderer {
         return lines
     }
 
-    private fun applyToLockScreen(context: Context, bitmap: Bitmap): Boolean {
+    private fun applyWallpaper(context: Context, bitmap: Bitmap, target: Target): Boolean {
         return try {
             val wm = WallpaperManager.getInstance(context)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                wm.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
+                val flags = when (target) {
+                    Target.HOME -> WallpaperManager.FLAG_SYSTEM
+                    Target.LOCK -> WallpaperManager.FLAG_LOCK
+                    Target.BOTH -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                }
+                wm.setBitmap(bitmap, null, true, flags)
             } else {
-                // Pre-N devices only support a single wallpaper target (no separate lock screen API).
+                // Pre-N devices have no separate lock screen wallpaper API — this sets the one shared wallpaper.
                 wm.setBitmap(bitmap)
             }
             true
