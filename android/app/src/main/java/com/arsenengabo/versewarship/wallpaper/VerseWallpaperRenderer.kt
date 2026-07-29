@@ -33,10 +33,11 @@ object VerseWallpaperRenderer {
     var supabaseAnonKey: String = ""
 
     enum class Target { HOME, LOCK, BOTH }
+    enum class TextPosition { TOP_LEFT, TOP_RIGHT, CENTER, BOTTOM_LEFT, BOTTOM_RIGHT }
 
-    fun refreshAndApply(context: Context, target: Target = Target.BOTH): Boolean {
+    fun refreshAndApply(context: Context, target: Target = Target.BOTH, position: TextPosition = TextPosition.CENTER): Boolean {
         val (reference, text) = fetchRandomVerse(context) ?: getCachedVerse(context) ?: return false
-        val bitmap = renderVerseBitmap(context, reference, text)
+        val bitmap = renderVerseBitmap(context, reference, text, position)
         return applyWallpaper(context, bitmap, target)
     }
 
@@ -96,7 +97,7 @@ object VerseWallpaperRenderer {
         }
     }
 
-    private fun renderVerseBitmap(context: Context, reference: String, text: String): Bitmap {
+    private fun renderVerseBitmap(context: Context, reference: String, text: String, position: TextPosition): Bitmap {
         val screen = getScreenSize(context)
         // Guard against absurd values on rare/unusual devices (foldables mid-fold, etc.)
         val width = screen.x.coerceIn(480, 2160)
@@ -106,39 +107,59 @@ object VerseWallpaperRenderer {
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.parseColor("#1B1330"))
 
-        // Reserve space top/bottom so text never collides with the lock screen clock
-        // widget (top ~22% of screen) or the home screen dock/gesture bar (bottom ~12%).
-        val topSafeMargin = height * 0.24f
-        val bottomSafeMargin = height * 0.14f
-        val horizontalMargin = width * 0.09f
+        // Equal margins on every side so centered text sits at the true visual
+        // center of the screen — same distance from top as bottom, left as right.
+        val topSafeMargin = height * 0.16f
+        val bottomSafeMargin = height * 0.16f
+        val horizontalMargin = width * 0.08f
         val maxTextWidth = width - horizontalMargin * 2
         val maxTextHeight = height - topSafeMargin - bottomSafeMargin
 
         val fitted = fitTextToBounds(text, maxTextWidth, maxTextHeight)
 
+        val isLeft = position == TextPosition.TOP_LEFT || position == TextPosition.BOTTOM_LEFT
+        val isRight = position == TextPosition.TOP_RIGHT || position == TextPosition.BOTTOM_RIGHT
+        val isTop = position == TextPosition.TOP_LEFT || position == TextPosition.TOP_RIGHT
+        val isBottom = position == TextPosition.BOTTOM_LEFT || position == TextPosition.BOTTOM_RIGHT
+
+        val alignMode = when {
+            isLeft -> Paint.Align.LEFT
+            isRight -> Paint.Align.RIGHT
+            else -> Paint.Align.CENTER
+        }
+        val x = when {
+            isLeft -> horizontalMargin
+            isRight -> width - horizontalMargin
+            else -> width / 2f
+        }
+
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textSize = fitted.fontSizePx
             typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL)
-            textAlign = Paint.Align.CENTER
+            textAlign = alignMode
         }
         val refPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#C9B8FF")
             textSize = (fitted.fontSizePx * 0.72f).coerceAtLeast(width * 0.03f)
             typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-            textAlign = Paint.Align.CENTER
+            textAlign = alignMode
         }
 
         val lineHeight = fitted.fontSizePx * 1.35f
-        val totalTextHeight = lineHeight * fitted.lines.size
-        // Center within the safe vertical band, not the full screen, so it clears the clock/dock.
-        var y = topSafeMargin + (maxTextHeight - totalTextHeight) / 2f + fitted.fontSizePx
+        val totalTextHeight = lineHeight * fitted.lines.size + lineHeight * 0.9f // + reference line
+
+        var y = when {
+            isTop -> topSafeMargin + fitted.fontSizePx
+            isBottom -> height - bottomSafeMargin - totalTextHeight + fitted.fontSizePx
+            else -> topSafeMargin + (maxTextHeight - totalTextHeight) / 2f + fitted.fontSizePx
+        }
 
         for (line in fitted.lines) {
-            canvas.drawText(line, width / 2f, y, bodyPaint)
+            canvas.drawText(line, x, y, bodyPaint)
             y += lineHeight
         }
-        canvas.drawText("— $reference", width / 2f, y + lineHeight * 0.5f, refPaint)
+        canvas.drawText("— $reference", x, y + lineHeight * 0.5f, refPaint)
 
         return bitmap
     }
