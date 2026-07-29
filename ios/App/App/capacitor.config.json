@@ -1,0 +1,13 @@
+{
+	"appId": "com.arsenengabo.versewarship",
+	"appName": "Verse Warship",
+	"webDir": "www-placeholder",
+	"server": {
+		"url": "https://REPLACE-WITH-YOUR-DEPLOYED-DOMAIN.example.com",
+		"cleartext": false
+	},
+	"android": {
+		"allowMixedContent": false
+	},
+	"packageClassList": []
+}
