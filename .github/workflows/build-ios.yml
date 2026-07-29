@@ -103,7 +103,7 @@ jobs:
       - name: Archive and export signed .ipa
         working-directory: ios/App
         run: |
-          xcodebuild -scheme App -workspace App.xcworkspace \
+          xcodebuild -scheme App -project App.xcodeproj \
             -configuration Release \
             -archivePath $RUNNER_TEMP/App.xcarchive \
             archive
